@@ -1,4 +1,3 @@
-// backend/server.js
 import WebSocket, { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,6 +13,7 @@ const PLAYER_RADIUS = 12;
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 
+// Broadcast game state to all clients
 function broadcastGameState() {
   const state = { players, bullets };
   const msg = JSON.stringify({ type: 'state', data: state });
@@ -22,23 +22,23 @@ function broadcastGameState() {
   });
 }
 
+// Update bullets and check collisions
 function update(dt) {
-  // Move bullets
   const now = Date.now();
-  for(const b of bullets) {
+  for(const b of bullets){
     b.x += b.vx*dt;
     b.y += b.vy*dt;
 
-    // Collision with players
-    for(const id in players) {
-      if(id === b.owner) continue; // skip owner
+    for(const id in players){
+      if(id === b.owner) continue;
       const p = players[id];
       const dx = b.x - p.x;
       const dy = b.y - p.y;
-      if(Math.sqrt(dx*dx+dy*dy) < PLAYER_RADIUS) {
+      if(Math.sqrt(dx*dx + dy*dy) < PLAYER_RADIUS){
         p.hp -= 20;
         if(p.hp <=0){
-          players[b.owner].kills = (players[b.owner].kills||0)+1;
+          const owner = players[b.owner];
+          if(owner) owner.kills = (owner.kills||0)+1;
           p.hp = 100;
           p.x = Math.random()*CANVAS_WIDTH;
           p.y = Math.random()*CANVAS_HEIGHT;
@@ -49,10 +49,13 @@ function update(dt) {
 
     if(now - b.created > BULLET_LIFETIME) b.hit = true;
   }
-  // Remove hit bullets
-  for(let i=bullets.length-1;i>=0;i--) if(bullets[i].hit) bullets.splice(i,1);
+
+  for(let i=bullets.length-1; i>=0; i--){
+    if(bullets[i].hit) bullets.splice(i,1);
+  }
 }
 
+// Game loop
 setInterval(()=>{
   const dt = TICK/1000;
   update(dt);
@@ -66,10 +69,10 @@ wss.on('connection', ws => {
 
   ws.send(JSON.stringify({ type:'init', id }));
 
-  ws.on('message', msg => {
-    try {
+  ws.on('message', msg=>{
+    try{
       const data = JSON.parse(msg);
-      if(data.type === 'update') {
+      if(data.type === 'update'){
         const p = players[id];
         if(!p) return;
         p.x = Math.max(0, Math.min(CANVAS_WIDTH, data.x));
@@ -78,8 +81,8 @@ wss.on('connection', ws => {
         p.username = data.username;
         p.color = data.color;
 
-        if(data.shots) {
-          for(const s of data.shots) {
+        if(data.shots){
+          for(const s of data.shots){
             bullets.push({
               x: s.x,
               y: s.y,
@@ -91,7 +94,7 @@ wss.on('connection', ws => {
           }
         }
       }
-    } catch(e){console.error(e);}
+    }catch(e){console.error(e);}
   });
 
   ws.on('close', ()=>{ delete players[id]; });
