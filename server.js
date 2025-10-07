@@ -3,11 +3,10 @@ import { createServer } from '@render/client-sdk';
 const server = createServer();
 const room = server.channel('cursor-wars-room');
 
-const BASE_W=1000,BASE_H=700;
-const PLAYER_RADIUS=10,BULLET_SPEED=400,TICK=16;
-
-let players={}, bullets=[], bots={};
-const BOT_COUNT=10, BOT_NAMES=["Zyra","Rex","Nova","Echo","Luna","Brax","Orin","Tara","Zane","Miko","Vex"];
+const BASE_W=1000,BASE_H=700,PLAYER_RADIUS=10,BULLET_SPEED=400,TICK=16;
+let players={},bullets=[];
+const BOT_COUNT=10,BOT_NAMES=["Zyra","Rex","Nova","Echo","Luna","Brax","Orin","Tara","Zane","Miko","Vex"];
+let bots={};
 
 // Spawn bots
 for(let i=0;i<BOT_COUNT;i++){
