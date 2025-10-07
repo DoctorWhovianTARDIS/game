@@ -1,12 +1,11 @@
 {
-  "name": "mouse-wars-backend",
+  "name": "cursor-wars",
   "version": "1.0.0",
-  "main": "server.js",
+  "type": "module",
+  "dependencies": {
+    "@render/client-sdk": "^latest"
+  },
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "ws": "^8.13.0",
-    "uuid": "^9.0.0"
   }
 }
