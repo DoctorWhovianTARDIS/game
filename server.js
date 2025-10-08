@@ -1,77 +1,105 @@
-import { createServer } from '@render/client-sdk';
+import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
 
-const server = createServer();
-const room = server.channel('cursor-wars-room');
+const app = express();
+const server = createServer(app);
+const io = new Server(server);
+app.use(express.static("public"));
 
-const BASE_W=1000,BASE_H=700,PLAYER_RADIUS=10,BULLET_SPEED=400,TICK=16;
-let players={},bullets=[];
-const BOT_COUNT=10,BOT_NAMES=["Zyra","Rex","Nova","Echo","Luna","Brax","Orin","Tara","Zane","Miko","Vex"];
-let bots={};
+const baseW = 1000;
+const baseH = 700;
+const TURN_SPEED = Math.PI / 90;
 
-// Spawn bots
-for(let i=0;i<BOT_COUNT;i++){
-  const id='bot_'+i;
-  bots[id]={id,username:BOT_NAMES[i],color:`hsl(${Math.floor(Math.random()*360)} 80% 60%)`,x:Math.random()*BASE_W,y:Math.random()*BASE_H,angle:Math.random()*Math.PI*2,hp:100,kills:0,alive:true,bot:true};
-  players[id]=bots[id];
+const players = {};
+const bullets = [];
+const bots = {};
+const namePool = ["Zyra","Rex","Nova","Echo","Luna","Brax","Orin","Tara","Zane","Miko","Vex","Dara","Ira","Kiro","Lexa","Nero","Sora","Trix","Kova","Pyra"];
+
+function randName() {
+  return namePool[Math.floor(Math.random() * namePool.length)];
 }
 
-// Handle join
-room.subscribe('join', msg => {
-  const p = msg.data;
-  players[p.id] = {...p,alive:true,kills:0,bot:false,angle:0,x:BASE_W/2,y:BASE_H/2};
-  room.publish('state',{players,bullets});
-});
+// create bots
+for (let i = 0; i < 9; i++) {
+  bots["bot" + i] = {
+    id: "bot" + i,
+    username: randName(),
+    color: `hsl(${Math.random() * 360} 80% 60%)`,
+    x: Math.random() * baseW,
+    y: Math.random() * baseH,
+    angle: Math.random() * Math.PI * 2,
+    hp: 100,
+    kills: 0,
+  };
+}
 
-// Handle update
-room.subscribe('update', msg=>{
-  const p = players[msg.data.id];
-  if(p && p.alive){p.x=msg.data.x;p.y=msg.data.y;p.angle=msg.data.angle;}
-});
-
-// Handle fire
-room.subscribe('fire', msg=>{
-  const b=msg.data;
-  bullets.push({x:b.x,y:b.y,vx:Math.cos(b.angle)*BULLET_SPEED*0.016,vy:Math.sin(b.angle)*BULLET_SPEED*0.016,owner:b.owner});
-});
-
-// Game tick
-setInterval(()=>{
-  // Move bullets and check hits
-  bullets.forEach((b,i)=>{
-    b.x+=b.vx;b.y+=b.vy;
-    for(let id in players){
-      const p=players[id];
-      if(!p.alive || p.id===b.owner) continue;
-      const dx=b.x-p.x,dy=b.y-p.y;
-      if(dx*dx+dy*dy<PLAYER_RADIUS*PLAYER_RADIUS){
-        p.hp--; bullets.splice(i,1);
-        if(p.hp<=0){p.alive=false;if(players[b.owner]) players[b.owner].kills++;}
-      }
-    }
+io.on("connection", (socket) => {
+  socket.on("join", (username) => {
+    players[socket.id] = {
+      id: socket.id,
+      username,
+      color: `hsl(${Math.random() * 360} 80% 60%)`,
+      x: Math.random() * baseW,
+      y: Math.random() * baseH,
+      angle: 0,
+      hp: 100,
+      kills: 0,
+    };
+    socket.emit("init", { id: socket.id, players, bots });
+    io.emit("updatePlayers", { players, bots });
   });
 
-  // Simple bot AI
-  Object.values(bots).forEach(bot=>{
-    if(!bot.alive) return;
-    bot.x+=Math.cos(bot.angle)*1;
-    bot.y+=Math.sin(bot.angle)*1;
-    if(Math.random()<0.02) bot.angle=Math.random()*Math.PI*2;
-    if(Math.random()<0.01){
-      const targets=Object.values(players).filter(p=>p.alive && p.id!==bot.id);
-      if(targets.length>0){
-        const target=targets[Math.floor(Math.random()*targets.length)];
-        bullets.push({
-          x:bot.x,
-          y:bot.y,
-          vx:Math.cos(Math.atan2(target.y-bot.y,target.x-bot.x))*BULLET_SPEED*0.016,
-          vy:Math.sin(Math.atan2(target.y-bot.y,target.x-bot.x))*BULLET_SPEED*0.016,
-          owner:bot.id
-        });
-      }
-    }
+  socket.on("move", (data) => {
+    const p = players[socket.id];
+    if (!p) return;
+    p.x = data.x;
+    p.y = data.y;
+    p.angle = data.angle;
   });
 
-  room.publish('state',{players,bullets});
-},TICK);
+  socket.on("shoot", (b) => {
+    bullets.push({ ...b, owner: socket.id });
+  });
 
-server.listen(3000,()=>console.log('Render backend running on port 3000'));
+  socket.on("disconnect", () => {
+    delete players[socket.id];
+    io.emit("updatePlayers", { players, bots });
+  });
+});
+
+// update loop
+setInterval(() => {
+  // move bullets
+  for (const b of bullets) {
+    b.x += b.vx;
+    b.y += b.vy;
+  }
+  // collision
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    const targets = { ...players, ...bots };
+    for (const id in targets) {
+      if (id === b.owner) continue;
+      const t = targets[id];
+      if (!t) continue;
+      const dx = t.x - b.x;
+      const dy = t.y - b.y;
+      if (Math.sqrt(dx * dx + dy * dy) < 10) {
+        t.hp -= 10;
+        bullets.splice(i, 1);
+        if (t.hp <= 0) {
+          if (players[b.owner]) players[b.owner].kills++;
+          if (bots[b.owner]) bots[b.owner].kills++;
+          if (players[id]) delete players[id];
+          if (bots[id]) bots[id].hp = 100;
+        }
+        break;
+      }
+    }
+  }
+  io.emit("state", { players, bots, bullets });
+}, 50);
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log("Server running on " + PORT));
